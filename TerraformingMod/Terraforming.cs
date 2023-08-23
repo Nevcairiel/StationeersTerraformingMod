@@ -429,7 +429,7 @@ namespace TerraformingMod
 
         public GlobalAtmospherePrecise(float gravity)
         {
-            worldSize = 7 * Math.Pow(10, 6);
+            worldSize = 2 * Math.Pow(10, 4);
             worldScale = 1 / worldSize;
             this.gravity = Mathf.Abs(gravity);
             rootGravity = Mathf.Sqrt(this.gravity);
