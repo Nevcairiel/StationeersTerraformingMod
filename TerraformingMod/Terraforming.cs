@@ -18,6 +18,14 @@ using System.Reflection;
 
 namespace TerraformingMod
 {
+    public enum AtmoAdjustmentSource
+    {
+        Lerp,
+        TakeMix,
+        GiveMix,
+        Deregister,
+    }
+
     [HarmonyPatch(typeof(Atmosphere), "LerpAtmosphere")]
     public class AtmosphereLerpAtmospherePatch
     {
@@ -42,7 +50,7 @@ namespace TerraformingMod
             if (!NetworkManager.IsClient && targetAtmos.IsGlobalAtmosphere)
             {
                 var change = TerraformingFunctions.GasMixCompair(__instance.GasMixture, __state);
-                TerraformingFunctions.ThisGlobalPrecise.UpdateGlobalAtmosphereChange(change);
+                TerraformingFunctions.ThisGlobalPrecise.UpdateGlobalAtmosphereChange(change, AtmoAdjustmentSource.Lerp);
             }
         }
     }
@@ -71,7 +79,7 @@ namespace TerraformingMod
             if (!NetworkManager.IsClient && atmosphere.IsGlobalAtmosphere)
             {
                 var change = TerraformingFunctions.GasMixCompair(____totalMixInWorldGasMix, __state);
-                TerraformingFunctions.ThisGlobalPrecise.UpdateGlobalAtmosphereChange(change);
+                TerraformingFunctions.ThisGlobalPrecise.UpdateGlobalAtmosphereChange(change, AtmoAdjustmentSource.TakeMix);
             }
         }
     }
@@ -101,7 +109,7 @@ namespace TerraformingMod
                     var gasMixture = new SimpleGasMixture(____totalMixInWorldGasMix);
                     gasMixture.Scale(ratio);
 
-                    TerraformingFunctions.ThisGlobalPrecise.UpdateGlobalAtmosphereChange(gasMixture);
+                    TerraformingFunctions.ThisGlobalPrecise.UpdateGlobalAtmosphereChange(gasMixture, AtmoAdjustmentSource.GiveMix);
                 }
             }
         }
@@ -122,7 +130,7 @@ namespace TerraformingMod
 
                 // check the difference to global and compensate for it
                 var change = TerraformingFunctions.GasMixCompair(TerraformingFunctions.GlobalAtmosphere.GasMixture, mixture);
-                TerraformingFunctions.ThisGlobalPrecise.UpdateGlobalAtmosphereChange(change);
+                TerraformingFunctions.ThisGlobalPrecise.UpdateGlobalAtmosphereChange(change, AtmoAdjustmentSource.Deregister);
             }
         }
     }
@@ -593,12 +601,39 @@ namespace TerraformingMod
         public static double deltaPa = -0.000450687147663802;
         public static double pressureGravityFactorInPa = 180 * 1000f;
 
+        public const bool ENABLE_TRACKING = true;
+
+        private System.Timers.Timer TrackingTimer;
+
         public GlobalAtmospherePrecise(float gravity)
         {
             worldSize = 7 * Math.Pow(10, 6);
             worldScale = 1 / worldSize;
             this.gravity = Mathf.Abs(gravity);
             rootGravity = Mathf.Sqrt(this.gravity);
+
+            if (ENABLE_TRACKING)
+            {
+                TrackingTimer = new System.Timers.Timer(2000);
+                TrackingTimer.Elapsed += TrackingTimer_Elapsed;
+                TrackingTimer.AutoReset = true;
+                TrackingTimer.Enabled = true;
+            }
+        }
+
+        private void TrackingTimer_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
+        {
+            lock (this)
+            {
+                foreach (AtmoAdjustmentSource type in Enum.GetValues(typeof(AtmoAdjustmentSource)))
+                {
+                    if (detailedChanges.ContainsKey(type))
+                    {
+                        var item = detailedChanges[type];
+                        ConsoleWindow.Print($"{type}: {item.Oxygen} moles of Oxygen");
+                    }
+                }
+            }
         }
 
         private GasMixture _OnLoadMix;
@@ -612,13 +647,23 @@ namespace TerraformingMod
         public float rootGravity;
         public double worldScale;
 
+        public Dictionary<AtmoAdjustmentSource, SimpleGasMixture> detailedChanges = new Dictionary<AtmoAdjustmentSource, SimpleGasMixture>();
+
         private SimpleGasMixture GasMixAccumulater = new SimpleGasMixture();
         private double GasMixAccumulatorMoles = 0;
 
-        public void UpdateGlobalAtmosphereChange(SimpleGasMixture change)
+        public void UpdateGlobalAtmosphereChange(SimpleGasMixture change, AtmoAdjustmentSource source)
         {
             lock (this)
             {
+                if (ENABLE_TRACKING)
+                {
+                    if (detailedChanges.ContainsKey(source) == false)
+                        detailedChanges.Add(source, new SimpleGasMixture());
+
+                    detailedChanges[source].Add(change);
+                }
+
                 // add to accumulator, and only update the global atmosphere if there is a significant change
                 GasMixAccumulatorMoles += GasMixAccumulater.Add(change);
                 if (GasMixAccumulatorMoles <= 1)
