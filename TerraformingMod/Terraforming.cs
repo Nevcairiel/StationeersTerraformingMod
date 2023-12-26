@@ -621,18 +621,33 @@ namespace TerraformingMod
             }
         }
 
+        private double LogSummaryGasChange(GasType gasType)
+        {
+            SimpleGasMixture Adjustment;
+            double MolsLerp = detailedChanges.TryGetValue(AtmoAdjustmentSource.Lerp, out Adjustment) ? Adjustment.GetType(gasType) : 0;
+            double MolsTake = detailedChanges.TryGetValue(AtmoAdjustmentSource.TakeMix, out Adjustment) ? Adjustment.GetType(gasType) : 0;
+            double MolsGive = detailedChanges.TryGetValue(AtmoAdjustmentSource.GiveMix, out Adjustment) ? Adjustment.GetType(gasType) : 0;
+            double MolsDereg = detailedChanges.TryGetValue(AtmoAdjustmentSource.Deregister, out Adjustment) ? Adjustment.GetType(gasType) : 0;
+
+
+            double MolsAll =  MolsLerp + MolsTake + MolsGive + MolsDereg;
+            ConsoleWindow.Print($"{gasType}: {MolsAll} Mols - {MolsTake} Take, {MolsGive} Give, {MolsLerp} Lerp, {MolsDereg} Dereg");
+
+            return MolsAll;
+        }
+
         private void TrackingTimer_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
         {
             lock (this)
             {
-                foreach (AtmoAdjustmentSource type in Enum.GetValues(typeof(AtmoAdjustmentSource)))
+                double Sum = 0;
+
+                foreach (GasType type in GlobalAtmospherePrecise.gasTypes)
                 {
-                    if (detailedChanges.ContainsKey(type))
-                    {
-                        var item = detailedChanges[type];
-                        ConsoleWindow.Print($"{type}: {item.Oxygen} moles of Oxygen");
-                    }
+                    Sum += LogSummaryGasChange(type);
                 }
+
+                ConsoleWindow.Print($"Total: {Sum} Mols");
             }
         }
 
